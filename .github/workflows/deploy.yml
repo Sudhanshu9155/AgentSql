@@ -83,20 +83,33 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }},AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }},AWS_DEFAULT_REGION=ap-south-1,AWS_REGION=ap-south-1,AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
           script: |
             set -e
+            mkdir -p ~/agentsql
             cd ~/agentsql
 
+            export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION AWS_REGION AWS_ACCOUNT_ID
+
+            cat > .env <<EOF
+            AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
+            AWS_REGION=${AWS_REGION}
+            JWT_SECRET=change-me
+            JWT_EXPIRES_IN=8h
+            MONGO_URI=mongodb://mongo:27017/agentsql
+            AGENT_URL=http://agent:8000
+            EOF
+
             # Authenticate Docker with ECR
-            aws ecr get-login-password --region ap-south-1 | \
+            aws ecr get-login-password --region "$AWS_REGION" | \
               docker login --username AWS --password-stdin \
-              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+              "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
             # Pull the latest images
-            docker compose pull
+            docker compose --env-file .env pull
 
             # Restart changed containers only
-            docker compose up -d --remove-orphans
+            docker compose --env-file .env up -d --remove-orphans
 
             # Clean up dangling images
             docker image prune -f

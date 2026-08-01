@@ -8,6 +8,7 @@ services:
       - agentsql-net
 
   server:
+    image: ${AWS_ACCOUNT_ID:-local}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/agentsql-server:latest
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -26,6 +27,7 @@ services:
       - agentsql-net
 
   agent:
+    image: ${AWS_ACCOUNT_ID:-local}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/agentsql-agent:latest
     build:
       context: ./agent
       dockerfile: Dockerfile
@@ -38,6 +40,7 @@ services:
       - agentsql-net
 
   client:
+    image: ${AWS_ACCOUNT_ID:-local}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/agentsql-client:latest
     build:
       context: ./client
       dockerfile: Dockerfile
