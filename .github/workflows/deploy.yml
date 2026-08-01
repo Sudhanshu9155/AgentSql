@@ -105,30 +105,29 @@ jobs:
               sudo apt-get install -y unzip curl
               curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
               unzip -q /tmp/awscliv2.zip -d /tmp
-              sudo /tmp/aws/install
+              sudo /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin
             fi
 
-            if ! docker compose version >/dev/null 2>&1; then
+            if ! sudo docker compose version >/dev/null 2>&1; then
               sudo apt-get update
               sudo apt-get install -y docker.io docker-compose-plugin
-              sudo systemctl enable docker
-              sudo systemctl start docker
+              sudo systemctl enable docker || true
+              sudo systemctl start docker || true
+              sudo service docker start || true
             fi
-
-            sudo usermod -aG docker ubuntu || true
 
             # Authenticate Docker with ECR
             aws ecr get-login-password --region "$AWS_REGION" | \
-              docker login --username AWS --password-stdin \
+              sudo docker login --username AWS --password-stdin \
               "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
             # Pull the latest images
-            docker compose --env-file .env pull
+            sudo docker compose --env-file .env pull
 
             # Restart changed containers only
-            docker compose --env-file .env up -d --remove-orphans
+            sudo docker compose --env-file .env up -d --remove-orphans
 
             # Clean up dangling images
-            docker image prune -f
+            sudo docker image prune -f
 
             echo "✅ Deployment complete!"
