@@ -78,7 +78,6 @@ jobs:
           AWS_REGION=${{ env.AWS_REGION }}
           AWS_ACCOUNT_ID=${{ env.AWS_ACCOUNT_ID }}
           EOF
-          chmod 600 aws-creds.env
 
       - name: 📋 Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
