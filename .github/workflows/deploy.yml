@@ -7,7 +7,8 @@ on:
 
 env:
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID || '074086641262' }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID || '074086641262' }}.dkr.ecr.ap-south-1.amazonaws.com
 
 jobs:
   # ─────────────────────────────────────────
@@ -91,6 +92,13 @@ jobs:
 
             export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION AWS_REGION AWS_ACCOUNT_ID
 
+            if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ]; then
+              echo "AWS_ACCOUNT_ID or AWS_REGION is missing"
+              exit 1
+            fi
+
+            REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
             cat > .env <<EOF
             AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
             AWS_REGION=${AWS_REGION}
@@ -119,7 +127,7 @@ jobs:
             # Authenticate Docker with ECR
             aws ecr get-login-password --region "$AWS_REGION" | \
               sudo docker login --username AWS --password-stdin \
-              "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+              "$REGISTRY"
 
             # Pull the latest images
             sudo docker compose --env-file .env pull
