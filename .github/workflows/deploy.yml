@@ -100,6 +100,23 @@ jobs:
             AGENT_URL=http://agent:8000
             EOF
 
+            if ! command -v aws >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y unzip curl
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+              unzip -q /tmp/awscliv2.zip -d /tmp
+              sudo /tmp/aws/install
+            fi
+
+            if ! docker compose version >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y docker.io docker-compose-plugin
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+
+            sudo usermod -aG docker ubuntu || true
+
             # Authenticate Docker with ECR
             aws ecr get-login-password --region "$AWS_REGION" | \
               docker login --username AWS --password-stdin \
