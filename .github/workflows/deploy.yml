@@ -96,9 +96,16 @@ jobs:
 
             echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
             echo "AWS_REGION=$AWS_REGION"
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:+set}"
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:+set}"
 
             if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ]; then
               echo "AWS_ACCOUNT_ID or AWS_REGION is missing"
+              exit 1
+            fi
+
+            if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+              echo "AWS access keys are missing on the EC2 host"
               exit 1
             fi
 
