@@ -16,7 +16,7 @@ services:
       MYSQL_USER: agentsql
       MYSQL_PASSWORD: agentsql123
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     networks:
@@ -62,7 +62,7 @@ services:
       dockerfile: Dockerfile
     restart: always
     ports:
-      - "8080:80"
+      - "80:80"
     depends_on:
       - server
       - agent
