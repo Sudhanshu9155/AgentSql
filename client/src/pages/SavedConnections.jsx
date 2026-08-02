@@ -28,7 +28,7 @@ const PALETTES = [
 
 export default function SavedConnections() {
   const [connections,    setConnections]    = useState([]);
-  const [form,           setForm]           = useState({ name: '', host: 'localhost', port: '3306', user: '', password: '', database: '' });
+  const [form,           setForm]           = useState({ name: '', host: 'mysql', port: '3306', user: 'agentsql', password: 'agentsql123', database: 'agentsql' });
   const [message,        setMessage]        = useState({ text: '', type: '' });
   const [loading,        setLoading]        = useState(false);
   const [pageLoading,    setPageLoading]    = useState(true);
@@ -57,7 +57,7 @@ export default function SavedConnections() {
     try {
       const data = await request('/databases', { method: 'POST', body: JSON.stringify(form) });
       setMessage({ text: data.message || 'Connection saved!', type: 'success' });
-      setForm({ name: '', host: 'localhost', port: '3306', user: '', password: '', database: '' });
+      setForm({ name: '', host: 'mysql', port: '3306', user: 'agentsql', password: 'agentsql123', database: 'agentsql' });
       await loadConnections();
     } catch (err) {
       setMessage({ text: err.message, type: 'error' });
