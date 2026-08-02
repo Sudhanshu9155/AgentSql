@@ -127,6 +127,11 @@ jobs:
 
             REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
+            if [ -z "${{ secrets.ENCRYPTION_KEY }}" ]; then
+              echo "ERROR: GitHub secret ENCRYPTION_KEY is missing"
+              exit 1
+            fi
+
             cat > .env <<EOF
             AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
             AWS_REGION=${AWS_REGION}
@@ -134,6 +139,7 @@ jobs:
             JWT_EXPIRES_IN=8h
             MONGO_URI=mongodb://mongo:27017/agentsql
             AGENT_URL=http://agent:8000
+            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
             EOF
 
             if ! command -v aws >/dev/null 2>&1; then
