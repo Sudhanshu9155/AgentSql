@@ -94,6 +94,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
           script: |
             set -e
             mkdir -p ~/agentsql
@@ -127,10 +128,18 @@ jobs:
 
             REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
-            if [ -z "${{ secrets.ENCRYPTION_KEY }}" ]; then
-              echo "ERROR: GitHub secret ENCRYPTION_KEY is missing"
-              exit 1
+            if [ -z "$ENCRYPTION_KEY" ] && [ -f .env ]; then
+              set -a
+              . ./.env
+              set +a
             fi
+
+            if [ -z "$ENCRYPTION_KEY" ]; then
+              ENCRYPTION_KEY="$(openssl rand -hex 32)"
+              echo "Generated a new ENCRYPTION_KEY for this deployment"
+            fi
+
+            echo "ENCRYPTION_KEY=${ENCRYPTION_KEY:+set}"
 
             cat > .env <<EOF
             AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
@@ -139,7 +148,7 @@ jobs:
             JWT_EXPIRES_IN=8h
             MONGO_URI=mongodb://mongo:27017/agentsql
             AGENT_URL=http://agent:8000
-            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
+            ENCRYPTION_KEY=${ENCRYPTION_KEY}
             EOF
 
             if ! command -v aws >/dev/null 2>&1; then
