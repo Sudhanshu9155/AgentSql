@@ -15,16 +15,18 @@ export default function Login() {
     setMessage('');
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
       if (!response.ok) { setMessage(data.message || 'Login failed'); return; }
       login({ ...data.user, token: data.token });
       navigate('/dashboard');
-    } catch {
+    } catch (error) {
+      console.error('Login failed:', error);
       setMessage('Network error. Please try again.');
     } finally { setLoading(false); }
   }

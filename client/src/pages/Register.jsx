@@ -15,16 +15,18 @@ export default function Register() {
     setMessage('');
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: form.name, email: form.email, password: form.password }),
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
       if (!response.ok) { setMessage(data.message || 'Registration failed'); return; }
       login({ ...data.user, token: data.token });
       navigate('/dashboard');
-    } catch {
+    } catch (error) {
+      console.error('Registration failed:', error);
       setMessage('Network error. Please try again.');
     } finally { setLoading(false); }
   }

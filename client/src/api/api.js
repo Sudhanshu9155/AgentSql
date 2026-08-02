@@ -1,5 +1,11 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+function getApiUrl(path) {
+  if (!path) return API_BASE_URL;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE_URL}${path}`;
+}
+
 /**
  * Central fetch wrapper.
  * - Automatically attaches the JWT from localStorage on every request.
@@ -16,12 +22,13 @@ export async function request(path, options = {}) {
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(getApiUrl(path), {
     ...options,
     headers,
   });
 
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
     // Surface the server's message for better UX error display
