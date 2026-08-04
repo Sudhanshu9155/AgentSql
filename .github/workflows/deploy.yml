@@ -29,49 +29,53 @@ jobs:
             echo "  AgentSQL Deployment Starting"
             echo "=============================================="
 
-            # ── STEP 1: Install Node.js 20 if not present ─────────────────────
+            # ── STEP 1: Install Node.js 20 ─────────────────────────────────────
             if ! command -v node &>/dev/null; then
               echo "[1/8] Installing Node.js 20..."
-              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null
-              sudo apt-get install -y nodejs 2>/dev/null
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
               echo "      Node.js $(node --version) installed"
             else
               echo "[1/8] Node.js already installed: $(node --version)"
             fi
 
-            # ── STEP 2: Install Python 3.12 (NOT system 3.14) ─────────────────
-            # Ubuntu 26.04 ships Python 3.14 — too new for pydantic-core/pandas.
-            # Use deadsnakes PPA to get Python 3.12 (stable, fully supported).
-            if ! command -v python3.12 &>/dev/null; then
-              echo "[2/8] Installing Python 3.12 via deadsnakes PPA..."
-              sudo apt-get install -y software-properties-common 2>/dev/null
-              sudo add-apt-repository ppa:deadsnakes/ppa -y 2>/dev/null
-              sudo apt-get update -y 2>/dev/null
-              sudo apt-get install -y python3.12 python3.12-venv python3.12-dev build-essential 2>/dev/null
-              echo "      Python $(python3.12 --version) installed"
+            # ── STEP 2: Install Python 3.12 via uv ────────────────────────────
+            # uv downloads Python from its own CDN — works on ANY Ubuntu version.
+            # NO apt/PPA needed. Avoids Python 3.14 incompatibility with
+            # pydantic-core (PyO3 max=3.13) and pandas.
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+            if ! command -v uv &>/dev/null; then
+              echo "[2/8] Installing uv..."
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH="$HOME/.local/bin:$PATH"
+              echo "      uv $(uv --version) installed"
             else
-              echo "[2/8] Python 3.12 already installed: $(python3.12 --version)"
+              echo "[2/8] uv already installed: $(uv --version)"
             fi
 
-            # Create/update isolated venv using Python 3.12
-            echo "      Creating Python 3.12 venv for agent..."
-            python3.12 -m venv ~/agentsql-venv
-            echo "      Venv ready at ~/agentsql-venv"
+            # Install Python 3.12 (uv downloads its own binaries, no apt needed)
+            echo "      Installing Python 3.12 via uv..."
+            uv python install 3.12
 
+            # Create isolated venv with Python 3.12
+            echo "      Creating Python 3.12 venv..."
+            uv venv --python 3.12 ~/agentsql-venv
+            echo "      Venv ready: ~/agentsql-venv ($(~/agentsql-venv/bin/python --version))"
 
-            # ── STEP 3: Install PM2 if not present ────────────────────────────
+            # ── STEP 3: Install PM2 ────────────────────────────────────────────
             if ! command -v pm2 &>/dev/null; then
               echo "[3/8] Installing PM2..."
-              sudo npm install -g pm2 2>/dev/null
+              sudo npm install -g pm2
               echo "      PM2 $(pm2 --version) installed"
             else
               echo "[3/8] PM2 already installed: $(pm2 --version)"
             fi
 
-            # ── STEP 4: Install and configure Nginx if not present ────────────
+            # ── STEP 4: Install and configure Nginx ───────────────────────────
             if ! command -v nginx &>/dev/null; then
               echo "[4/8] Installing Nginx..."
-              sudo apt-get install -y nginx 2>/dev/null
+              sudo apt-get install -y nginx
               sudo systemctl enable nginx
               sudo systemctl start nginx
               echo "      Nginx installed"
@@ -79,11 +83,9 @@ jobs:
               echo "[4/8] Nginx already installed"
             fi
 
-            # Create Nginx web root for React
             sudo mkdir -p /var/www/agentsql
 
-            # Write Nginx site config (always overwrite to keep it updated)
-            sudo tee /etc/nginx/sites-available/agentsql > /dev/null << 'NGINXEOF'
+            cat << 'NGINXEOF' | sed 's/^[ \t]*//' | sudo tee /etc/nginx/sites-available/agentsql > /dev/null
             server {
                 listen 80;
                 server_name _;
@@ -91,12 +93,10 @@ jobs:
                 root /var/www/agentsql;
                 index index.html;
 
-                # React SPA fallback
                 location / {
                     try_files $uri $uri/ /index.html;
                 }
 
-                # Proxy API to Node.js server
                 location /api/ {
                     proxy_pass http://127.0.0.1:3001;
                     proxy_http_version 1.1;
@@ -110,7 +110,6 @@ jobs:
             }
             NGINXEOF
 
-            # Enable site, disable default
             sudo ln -sf /etc/nginx/sites-available/agentsql /etc/nginx/sites-enabled/agentsql
             sudo rm -f /etc/nginx/sites-enabled/default
             sudo nginx -t
@@ -119,7 +118,7 @@ jobs:
 
             # ── STEP 5: Clone or pull latest code ─────────────────────────────
             if [ ! -d "$HOME/agentsql/.git" ]; then
-              echo "[5/8] Cloning repository for the first time..."
+              echo "[5/8] Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git ~/agentsql
             else
               echo "[5/8] Pulling latest code..."
@@ -132,7 +131,7 @@ jobs:
 
             # ── STEP 6: Write .env from GitHub Secrets ────────────────────────
             echo "[6/8] Writing .env file..."
-            cat > .env << ENVEOF
+            cat << 'ENVEOF' | sed 's/^[ \t]*//' > .env
             PORT=3001
             AGENT_URL=http://127.0.0.1:8000
             JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -150,12 +149,12 @@ jobs:
             cd ~/agentsql/server
             npm ci --omit=dev
 
-            echo "      Installing agent dependencies into Python 3.12 venv..."
+            echo "      Installing agent dependencies (Python 3.12 venv)..."
             cd ~/agentsql/agent
-            # Use the venv pip — fully isolated from system Python 3.14
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
             ~/agentsql-venv/bin/pip install --upgrade pip --quiet
-            ~/agentsql-venv/bin/pip install -r requirements.txt --quiet --prefer-binary
-            echo "      Agent dependencies installed"
+            ~/agentsql-venv/bin/pip install -r requirements.txt --prefer-binary --quiet
+            echo "      Agent dependencies installed successfully"
 
             echo "      Building React client..."
             cd ~/agentsql/client
@@ -169,16 +168,14 @@ jobs:
             # ── STEP 8: Start or reload services via PM2 ──────────────────────
             echo "[8/8] Starting/reloading services with PM2..."
             cd ~/agentsql
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
             if pm2 list | grep -q "agentsql-server"; then
-              # Services already running — zero-downtime reload
               pm2 reload ecosystem.config.js --update-env
-              echo "      Services reloaded"
+              echo "      Services reloaded (zero downtime)"
             else
-              # First time — start fresh
               pm2 start ecosystem.config.js
               pm2 save
-              # Enable PM2 to auto-start on server reboot
               sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ubuntu --hp /home/ubuntu || true
               pm2 save
               echo "      Services started and saved"
