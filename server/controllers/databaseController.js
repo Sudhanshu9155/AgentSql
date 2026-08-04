@@ -45,15 +45,29 @@ function safeResponse(doc) {
 export async function listDatabases(req, res) {
   try {
     const databases = await Connection.find({ userId: req.user.id }).sort({ createdAt: -1 });
-    const mapped = databases.map(db => ({
-      ...safeResponse(db.toObject()),
-      id: db._id,
-      created_at: db.createdAt,
-    }));
+    const mapped = databases.map(db => {
+      try {
+        return {
+          ...safeResponse(db.toObject()),
+          id: db._id,
+          created_at: db.createdAt,
+        };
+      } catch (err) {
+        // If decryption fails (e.g. key changed), return a masked record so it can be deleted
+        return {
+          ...db.toObject(),
+          password: 'ERROR: DECRYPTION_FAILED',
+          host: 'ERROR: DECRYPTION_FAILED',
+          user: 'ERROR: DECRYPTION_FAILED',
+          id: db._id,
+          created_at: db.createdAt,
+        };
+      }
+    });
     res.json(mapped);
   } catch (error) {
     console.error('listDatabases error:', error);
-    res.status(500).json({ message: 'Failed to list databases' });
+    res.status(500).json({ message: error.message || 'Failed to list databases' });
   }
 }
 

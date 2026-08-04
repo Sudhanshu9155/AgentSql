@@ -22,14 +22,16 @@ const TAG_LEN   = 16;  // 128-bit auth tag
 
 // ── Key loading ────────────────────────────────────────────────────────────
 function getKey() {
-  const hex = process.env.ENCRYPTION_KEY;
-  if (!hex || hex.length !== 64) {
-    throw new Error(
-      'ENCRYPTION_KEY must be set to exactly 64 hex characters (32 bytes). ' +
-      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
-    );
+  const secret = process.env.ENCRYPTION_KEY;
+  if (!secret) {
+    throw new Error('ENCRYPTION_KEY is missing from environment variables.');
   }
-  return Buffer.from(hex, 'hex');
+  // If it's exactly 64 hex characters, use it as a raw key
+  if (/^[0-9a-f]{64}$/i.test(secret)) {
+    return Buffer.from(secret, 'hex');
+  }
+  // Otherwise, hash it to get a deterministic 32-byte (256-bit) key
+  return crypto.createHash('sha256').update(secret).digest();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
