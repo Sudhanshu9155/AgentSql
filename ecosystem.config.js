@@ -28,7 +28,8 @@ module.exports = {
     // ── Python FastAPI Agent ───────────────────────────────────────────────────
     {
       name: 'agentsql-agent',
-      script: 'python3',
+      // Use the Python 3.12 venv — system Python 3.14 is too new for pydantic-core/pandas
+      script: '/home/ubuntu/agentsql-venv/bin/python3',
       args: '-m uvicorn app:app --host 127.0.0.1 --port 8000',
       cwd: '/home/ubuntu/agentsql/agent',
       interpreter: 'none',      // tell PM2 not to use node as interpreter
@@ -37,6 +38,7 @@ module.exports = {
       max_memory_restart: '400M',
       env: {
         PYTHONUNBUFFERED: '1',
+        VIRTUAL_ENV: '/home/ubuntu/agentsql-venv',
       },
     },
   ],
