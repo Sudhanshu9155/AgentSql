@@ -1,4 +1,4 @@
-﻿name: Deploy AgentSQL to EC2
+name: Deploy AgentSQL to EC2
 
 on:
   push:
@@ -40,23 +40,24 @@ jobs:
             fi
 
             # ── STEP 2: Install Python 3.12 (NOT system 3.14) ─────────────────
-            # Python 3.14 is too new — pydantic-core, pandas, etc. don't have
-            # wheels for it yet. Python 3.12 is the stable LTS choice.
+            # Ubuntu 26.04 ships Python 3.14 — too new for pydantic-core/pandas.
+            # Use deadsnakes PPA to get Python 3.12 (stable, fully supported).
             if ! command -v python3.12 &>/dev/null; then
-              echo "[2/8] Installing Python 3.12 + build tools..."
+              echo "[2/8] Installing Python 3.12 via deadsnakes PPA..."
+              sudo apt-get install -y software-properties-common 2>/dev/null
+              sudo add-apt-repository ppa:deadsnakes/ppa -y 2>/dev/null
               sudo apt-get update -y 2>/dev/null
-              sudo apt-get install -y \
-                python3.12 python3.12-venv python3.12-dev \
-                build-essential 2>/dev/null
+              sudo apt-get install -y python3.12 python3.12-venv python3.12-dev build-essential 2>/dev/null
               echo "      Python $(python3.12 --version) installed"
             else
               echo "[2/8] Python 3.12 already installed: $(python3.12 --version)"
             fi
 
-            # Ensure venv directory is created fresh for agent
+            # Create/update isolated venv using Python 3.12
             echo "      Creating Python 3.12 venv for agent..."
             python3.12 -m venv ~/agentsql-venv
             echo "      Venv ready at ~/agentsql-venv"
+
 
             # ── STEP 3: Install PM2 if not present ────────────────────────────
             if ! command -v pm2 &>/dev/null; then
