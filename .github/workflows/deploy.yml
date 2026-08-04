@@ -1,192 +1,182 @@
-name: 🚀 Build, Push & Deploy AgentSQL
+﻿name: Deploy AgentSQL to EC2
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Allow manual trigger
-
-env:
-  AWS_REGION: ap-south-1
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID || '074086641262' }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID || '074086641262' }}.dkr.ecr.ap-south-1.amazonaws.com
+  workflow_dispatch:
 
 jobs:
-  # ─────────────────────────────────────────
-  # JOB 1: Build & Push Docker images to ECR
-  # ─────────────────────────────────────────
-  build-and-push:
-    name: 🏗️ Build & Push to ECR
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔑 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: 🔐 Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: 🐳 Build & Push CLIENT image
-        working-directory: ./client
-        run: |
-          docker build -t $ECR_REGISTRY/agentsql-client:latest \
-                       -t $ECR_REGISTRY/agentsql-client:${{ github.sha }} .
-          docker push $ECR_REGISTRY/agentsql-client:latest
-          docker push $ECR_REGISTRY/agentsql-client:${{ github.sha }}
-
-      - name: 🐳 Build & Push SERVER image
-        working-directory: ./server
-        run: |
-          docker build -t $ECR_REGISTRY/agentsql-server:latest \
-                       -t $ECR_REGISTRY/agentsql-server:${{ github.sha }} .
-          docker push $ECR_REGISTRY/agentsql-server:latest
-          docker push $ECR_REGISTRY/agentsql-server:${{ github.sha }}
-
-      - name: 🐳 Build & Push AGENT image
-        working-directory: ./agent
-        run: |
-          docker build -t $ECR_REGISTRY/agentsql-agent:latest \
-                       -t $ECR_REGISTRY/agentsql-agent:${{ github.sha }} .
-          docker push $ECR_REGISTRY/agentsql-agent:latest
-          docker push $ECR_REGISTRY/agentsql-agent:${{ github.sha }}
-
-  # ─────────────────────────────────────────
-  # JOB 2: Deploy to EC2 via SSH
-  # ─────────────────────────────────────────
   deploy:
-    name: 🚢 Deploy to EC2
+    name: Deploy to EC2
     runs-on: ubuntu-latest
-    needs: build-and-push
 
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: � Create AWS credentials file
-        run: |
-          cat > aws-creds.env <<EOF
-          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
-          AWS_REGION=${{ env.AWS_REGION }}
-          AWS_ACCOUNT_ID=${{ env.AWS_ACCOUNT_ID }}
-          EOF
-
-      - name: 📋 Copy files to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yml,aws-creds.env"
-          target: "~/agentsql/"
-
-      - name: 🚀 SSH into EC2 and redeploy
+      - name: Setup EC2 and Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
+          timeout: 600s
+          command_timeout: 600s
           script: |
             set -e
-            mkdir -p ~/agentsql
+
+            echo "=============================================="
+            echo "  AgentSQL Deployment Starting"
+            echo "=============================================="
+
+            # ── STEP 1: Install Node.js 20 if not present ───────────────────────
+            if ! command -v node &>/dev/null; then
+              echo "[1/8] Installing Node.js 20..."
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null
+              sudo apt-get install -y nodejs 2>/dev/null
+              echo "      Node.js $(node --version) installed"
+            else
+              echo "[1/8] Node.js already installed: $(node --version)"
+            fi
+
+            # ── STEP 2: Install Python 3 + pip if not present ───────────────────
+            if ! command -v python3 &>/dev/null; then
+              echo "[2/8] Installing Python 3..."
+              sudo apt-get update -y 2>/dev/null
+              sudo apt-get install -y python3 python3-pip 2>/dev/null
+              echo "      Python $(python3 --version) installed"
+            else
+              echo "[2/8] Python already installed: $(python3 --version)"
+            fi
+
+            # ── STEP 3: Install PM2 if not present ──────────────────────────────
+            if ! command -v pm2 &>/dev/null; then
+              echo "[3/8] Installing PM2..."
+              sudo npm install -g pm2 2>/dev/null
+              echo "      PM2 $(pm2 --version) installed"
+            else
+              echo "[3/8] PM2 already installed: $(pm2 --version)"
+            fi
+
+            # ── STEP 4: Install and configure Nginx if not present ───────────────
+            if ! command -v nginx &>/dev/null; then
+              echo "[4/8] Installing Nginx..."
+              sudo apt-get install -y nginx 2>/dev/null
+              sudo systemctl enable nginx
+              sudo systemctl start nginx
+              echo "      Nginx installed"
+            else
+              echo "[4/8] Nginx already installed"
+            fi
+
+            # Create Nginx web root for React
+            sudo mkdir -p /var/www/agentsql
+
+            # Write Nginx site config (always overwrite to keep it updated)
+            sudo tee /etc/nginx/sites-available/agentsql > /dev/null << 'NGINXEOF'
+            server {
+                listen 80;
+                server_name _;
+
+                root /var/www/agentsql;
+                index index.html;
+
+                # React SPA fallback
+                location / {
+                    try_files $uri $uri/ /index.html;
+                }
+
+                # Proxy API to Node.js server
+                location /api/ {
+                    proxy_pass http://127.0.0.1:3001;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                }
+            }
+            NGINXEOF
+
+            # Enable site, disable default
+            sudo ln -sf /etc/nginx/sites-available/agentsql /etc/nginx/sites-enabled/agentsql
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo nginx -t
+            sudo systemctl reload nginx
+            echo "      Nginx configured and reloaded"
+
+            # ── STEP 5: Clone or pull latest code ───────────────────────────────
+            if [ ! -d "$HOME/agentsql/.git" ]; then
+              echo "[5/8] Cloning repository for the first time..."
+              git clone https://github.com/${{ github.repository }}.git ~/agentsql
+            else
+              echo "[5/8] Pulling latest code..."
+              cd ~/agentsql
+              git fetch origin
+              git reset --hard origin/main
+            fi
+
             cd ~/agentsql
 
-            # Load AWS credentials from file and export them for child processes
-            if [ -f aws-creds.env ]; then
-              set -a
-              . ./aws-creds.env
-              set +a
-              export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION AWS_REGION AWS_ACCOUNT_ID
-            else
-              echo "ERROR: aws-creds.env not found"
-              exit 1
-            fi
-
-            echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
-            echo "AWS_REGION=$AWS_REGION"
-            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:+set}"
-            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:+set}"
-
-            if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ]; then
-              echo "AWS_ACCOUNT_ID or AWS_REGION is missing"
-              exit 1
-            fi
-
-            if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-              echo "AWS access keys are missing on the EC2 host"
-              exit 1
-            fi
-
-            REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-
-            if [ -z "$ENCRYPTION_KEY" ] && [ -f .env ]; then
-              set -a
-              . ./.env
-              set +a
-            fi
-
-            if [ -z "$ENCRYPTION_KEY" ]; then
-              ENCRYPTION_KEY="$(openssl rand -hex 32)"
-              echo "Generated a new ENCRYPTION_KEY for this deployment"
-            fi
-
-            echo "ENCRYPTION_KEY=${ENCRYPTION_KEY:+set}"
-
-            cat > .env <<EOF
-            AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
-            AWS_REGION=${AWS_REGION}
-            JWT_SECRET=change-me
+            # ── STEP 6: Write .env from GitHub Secrets ───────────────────────────
+            echo "[6/8] Writing .env file..."
+            cat > .env << ENVEOF
+            PORT=3001
+            AGENT_URL=http://127.0.0.1:8000
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
             JWT_EXPIRES_IN=8h
-            MONGO_URI=mongodb://mongo:27017/agentsql
-            AGENT_URL=http://agent:8000
-            ENCRYPTION_KEY=${ENCRYPTION_KEY}
-            EOF
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            ENVEOF
+            echo "      .env written"
 
-            if ! command -v aws >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y unzip curl
-              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-              unzip -q /tmp/awscliv2.zip -d /tmp
-              sudo /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin
+            # ── STEP 7: Install dependencies and build ───────────────────────────
+            echo "[7/8] Installing dependencies and building..."
+
+            echo "      Installing server dependencies..."
+            cd ~/agentsql/server
+            npm ci --omit=dev
+
+            echo "      Installing agent dependencies..."
+            cd ~/agentsql/agent
+            pip install -r requirements.txt --quiet
+
+            echo "      Building React client..."
+            cd ~/agentsql/client
+            npm ci
+            npm run build
+
+            echo "      Copying build to Nginx web root..."
+            sudo cp -r ~/agentsql/client/dist/* /var/www/agentsql/
+            echo "      Client deployed to /var/www/agentsql"
+
+            # ── STEP 8: Start or reload services via PM2 ─────────────────────────
+            echo "[8/8] Starting/reloading services with PM2..."
+            cd ~/agentsql
+
+            if pm2 list | grep -q "agentsql-server"; then
+              # Services already running — do a zero-downtime reload
+              pm2 reload ecosystem.config.js --update-env
+              echo "      Services reloaded"
+            else
+              # First time — start fresh
+              pm2 start ecosystem.config.js
+              pm2 save
+              # Enable PM2 to auto-start on server reboot
+              sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ubuntu --hp /home/ubuntu || true
+              pm2 save
+              echo "      Services started and saved"
             fi
 
-            if ! sudo docker compose version >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y ca-certificates curl gnupg lsb-release
-              sudo install -m 0755 -d /etc/apt/keyrings
-              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-              sudo apt-get update
-              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-              sudo systemctl enable docker || true
-              sudo systemctl start docker || true
-              sudo service docker start || true
-            fi
+            pm2 status
 
-            # Authenticate Docker with ECR
-            aws ecr get-login-password --region "$AWS_REGION" | \
-              sudo docker login --username AWS --password-stdin \
-              "$REGISTRY"
-
-            # Pull the latest images
-            sudo docker compose --env-file .env pull
-
-            # Restart changed containers only
-            sudo docker compose --env-file .env up -d --remove-orphans
-
-            # Clean up dangling images
-            sudo docker image prune -f
-
-            # Cleanup
-            rm -f aws-creds.env
-
-            echo "✅ Deployment complete!"
+            echo ""
+            echo "=============================================="
+            echo "  Deployment Complete!"
+            echo "  Frontend : http://${{ secrets.EC2_HOST }}/"
+            echo "  API      : http://${{ secrets.EC2_HOST }}:3001/api/health"
+            echo "  Agent    : http://${{ secrets.EC2_HOST }}:8000/docs"
+            echo "=============================================="

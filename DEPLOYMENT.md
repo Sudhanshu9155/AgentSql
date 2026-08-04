@@ -1,93 +1,18 @@
-# üöÄ AgentSQL ‚Äî Deployment Guide
+# ?? AgentSQL ó Deployment Guide (EC2 + GitHub Actions)
 
-> **Stack**: React (Vite) ¬∑ Node.js/Express ¬∑ Python FastAPI ¬∑ MongoDB  
-> **Services**: `client` :80 ¬∑ `server` :3001 ¬∑ `agent` :8000 ¬∑ `mongo` :27017
-
----
-
-# PART 1 ‚Äî DOCKER
-
-> Run all commands on your **local Windows machine** (PowerShell).
+> **Stack**: React (Vite) ∑ Node.js/Express ∑ Python FastAPI ∑ MongoDB Atlas
+> **Services**: `client` served by Nginx :80 ∑ `server` :3001 ∑ `agent` :8000
+> **No Docker. No ECR. Just EC2 + Git + PM2.**
 
 ---
 
-## Step 1 ‚Äî Install Docker Desktop
-
-Download and install from: [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
-
-After install, open Docker Desktop and make sure it says **"Engine running"**.
-
-Verify in PowerShell:
-```powershell
-docker --version
-docker compose version
-```
+# PART 1 ó GITHUB SETUP
 
 ---
 
-## Step 2 ‚Äî Understand the Project Files
+## Step 1 ó Push Your Code to GitHub
 
-These files are already created in your project:
-
-| File | What It Does |
-|------|-------------|
-| `client/Dockerfile` | Builds React app ‚Üí serves with Nginx |
-| `client/nginx.conf` | Nginx config with SPA fallback + API proxy |
-| `server/Dockerfile` | Runs Node.js/Express |
-| `agent/Dockerfile` | Runs Python FastAPI |
-| `docker-compose.yml` | Orchestrates all 4 services together |
-| `client/.dockerignore` | Excludes node_modules, dist, .env |
-| `server/.dockerignore` | Excludes node_modules, .env |
-| `agent/.dockerignore` | Excludes __pycache__, .pyc, .env |
-
----
-
-## Step 3 ‚Äî Test Locally with Docker Compose
-
-Before deploying, confirm everything works on your machine:
-
-```powershell
-# From your project root
-docker compose build
-docker compose up -d
-
-# Check all containers are running
-docker compose ps
-```
-
-Open in browser:
-- Frontend ‚Üí `http://localhost`
-- API ‚Üí `http://localhost:3001/api/health`
-- Agent Docs ‚Üí `http://localhost:8000/docs`
-
-Stop when done:
-```powershell
-docker compose down
-```
-
----
-
-## Step 4 ‚Äî Build Production Images Locally
-
-```powershell
-docker build -t agentsql-client:latest ./client
-docker build -t agentsql-server:latest ./server
-docker build -t agentsql-agent:latest  ./agent
-```
-
-If all 3 build without errors, your Docker setup is ready. ‚úÖ
-
----
-
-# PART 2 ‚Äî GITHUB
-
-> Set up your code repository and CI/CD pipeline.
-
----
-
-## Step 5 ‚Äî Push Your Code to GitHub
-
-If not already on GitHub:
+If your code is not yet on GitHub:
 
 ```powershell
 git init
@@ -98,250 +23,365 @@ git remote add origin https://github.com/<your-username>/agentsql.git
 git push -u origin main
 ```
 
-> Make sure `.env` is in `.gitignore` ‚Äî **never push real secrets**.
+> Make sure `.env` is in `.gitignore` ó never push real secrets to GitHub.
 
 ---
 
-## Step 6 ‚Äî Add GitHub Secrets
+## Step 2 ó Add GitHub Secrets
 
-Go to your repo on GitHub:  
-**Settings ‚Üí Secrets and variables ‚Üí Actions ‚Üí New repository secret**
+Go to your repo on GitHub:
+**Settings ? Secrets and variables ? Actions ? New repository secret**
 
-Add these 5 secrets:
+Add these 6 secrets:
 
-| Secret Name | Value | Where to Get It |
-|-------------|-------|----------------|
-| `AWS_ACCESS_KEY_ID` | IAM access key | AWS Console ‚Üí IAM ‚Üí Users ‚Üí Security Credentials |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret key | Same page (shown once at creation) |
-| `AWS_ACCOUNT_ID` | 12-digit number | Run: `aws sts get-caller-identity --query Account` |
-| `EC2_HOST` | EC2 public IPv4 | EC2 Console ‚Üí Instance ‚Üí Public IPv4 address |
-| `EC2_SSH_KEY` | Full `.pem` content | Open `.pem` in Notepad ‚Üí copy everything |
+| Secret Name       | Value                                           |
+|-------------------|--------------------------------------------------|
+| `EC2_HOST`        | Your EC2 public IP address (e.g. `13.233.x.x`) |
+| `EC2_SSH_KEY`     | Full contents of your `.pem` key file           |
+| `MONGO_URI`       | Your MongoDB Atlas connection string            |
+| `JWT_SECRET`      | A long random string (64+ chars)                |
+| `ENCRYPTION_KEY`  | Exactly 64 hex characters (32 bytes)            |
+| `GEMINI_API_KEY`  | Your Google Gemini API key                      |
+
+**How to generate JWT_SECRET:**
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+**How to generate ENCRYPTION_KEY:**
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
 ---
 
-## Step 7 ‚Äî Understand the CI/CD Workflow
+## Step 3 ó Understand the CI/CD Workflow
 
 The file `.github/workflows/deploy.yml` is already in your project.
 
-Every time you push to `main`, it automatically:
+Every time you push to `main`, GitHub Actions will automatically:
 
 ```
-git push ‚Üí GitHub Actions starts
-    ‚îÇ
-    ‚îú‚îÄ‚îÄ Builds client image  ‚Üí pushes to AWS ECR
-    ‚îú‚îÄ‚îÄ Builds server image  ‚Üí pushes to AWS ECR
-    ‚îî‚îÄ‚îÄ Builds agent image   ‚Üí pushes to AWS ECR
-            ‚îÇ
-            ‚îî‚îÄ‚îÄ SSHs into EC2
-                    ‚îî‚îÄ‚îÄ pulls new images ‚Üí restarts containers
+git push ? GitHub Actions starts
+    +-- SSH into your EC2 server
+            +-- git pull (latest code)
+            +-- npm ci  (server dependencies)
+            +-- pip install -r requirements.txt
+            +-- npm run build (React ? static files)
+            +-- Copy built files ? /var/www/agentsql/
+            +-- pm2 reload (restart server + agent)
 ```
 
-To manually trigger it anytime:  
-**GitHub ‚Üí Actions tab ‚Üí "Build, Push & Deploy AgentSQL" ‚Üí Run workflow**
+You can also trigger it manually:
+**GitHub ? Actions tab ? "Deploy AgentSQL to EC2" ? Run workflow**
 
 ---
 
-## Step 8 ‚Äî Trigger Your First Automated Deploy
+# PART 2 ó AWS EC2 SETUP
 
-After AWS is set up (Part 3), just push any change:
-
-```powershell
-git add .
-git commit -m "deploy: production setup"
-git push origin main
-```
-
-Watch the pipeline at: `https://github.com/<your-username>/agentsql/actions`
+> Run these steps **once** to set up your server.
 
 ---
 
-# PART 3 ‚Äî AWS
+## Step 4 ó Launch an EC2 Instance
 
-> Set up cloud infrastructure. Run AWS CLI commands in PowerShell.
-
----
-
-## Step 9 ‚Äî Install and Configure AWS CLI
-
-Install:
-```powershell
-winget install Amazon.AWSCLI
-```
-
-Configure:
-```powershell
-aws configure
-```
-
-Enter when prompted:
-- **Access Key ID** ‚Üí your key
-- **Secret Access Key** ‚Üí your secret
-- **Default region** ‚Üí `ap-south-1`
-- **Output format** ‚Üí `json`
-
----
-
-## Step 10 ‚Äî Create ECR Repositories (Run Once)
-
-ECR is AWS's private Docker image registry.
-
-```powershell
-aws ecr create-repository --repository-name agentsql-client --region ap-south-1
-aws ecr create-repository --repository-name agentsql-server --region ap-south-1
-aws ecr create-repository --repository-name agentsql-agent  --region ap-south-1
-```
-
-Get your Account ID (save this ‚Äî used everywhere):
-```powershell
-aws sts get-caller-identity --query Account --output text
-```
-
----
-
-## Step 11 ‚Äî Launch an EC2 Instance
-
-1. Go to **AWS Console ‚Üí EC2 ‚Üí Launch Instance**
+1. Go to **AWS Console ? EC2 ? Launch Instance**
 2. Configure:
    - **Name**: `agentsql-prod`
    - **AMI**: `Ubuntu Server 24.04 LTS`
-   - **Instance type**: `t3.medium` (2 vCPU, 4 GB RAM)
-   - **Key pair**: Create new ‚Üí download `.pem` ‚Üí store safely
+   - **Instance type**: `t3.medium` (2 vCPU, 4 GB RAM) ó minimum recommended
+   - **Key pair**: Create new ? download `.pem` ? store safely
    - **Storage**: 20 GB gp3
 
 3. Add **Inbound Security Group Rules**:
 
-   | Port | Source | Purpose |
-   |------|--------|---------|
-   | 22 | Your IP only | SSH access |
-   | 80 | 0.0.0.0/0 | React frontend |
-   | 3001 | 0.0.0.0/0 | Node.js API |
-   | 8000 | 0.0.0.0/0 | Python Agent |
+   | Port | Source      | Purpose              |
+   |------|-------------|----------------------|
+   | 22   | Your IP     | SSH access           |
+   | 80   | 0.0.0.0/0   | React frontend       |
+   | 3001 | 0.0.0.0/0   | Node.js API          |
+   | 8000 | 127.0.0.1   | Python Agent (internal only) |
+
+   > The agent runs on localhost only ó Nginx proxies `/api/agent` to it.
 
 ---
 
-## Step 12 ‚Äî Install Docker on EC2
+## Step 5 ó SSH Into Your EC2 Instance
 
-SSH into your EC2:
 ```powershell
+# On Windows (PowerShell) ó fix key permissions first
+icacls "your-key.pem" /inheritance:r /grant:r "%USERNAME%:R"
+
+# Connect
 ssh -i "your-key.pem" ubuntu@<EC2-PUBLIC-IP>
 ```
 
-Run on EC2:
+---
+
+## Step 6 ó Install Required Software on EC2
+
+Run all of these **once** after first SSH login:
+
+### Install Node.js 20 LTS
 ```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl awscli
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-  https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-printf 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\n' "$(. /etc/os-release && echo "$VERSION_CODENAME")" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-sudo usermod -aG docker ubuntu
-newgrp docker
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node --version   # should print v20.x.x
+npm --version
 ```
 
-Verify:
+### Install Python 3.11 + pip
 ```bash
-docker --version
-docker compose version
+sudo apt-get update
+sudo apt-get install -y python3.11 python3-pip python3.11-venv
+python3 --version   # should print 3.11.x
+```
+
+### Install PM2 (process manager)
+```bash
+sudo npm install -g pm2
+pm2 --version
+```
+
+### Install Nginx (web server for React)
+```bash
+sudo apt-get install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+nginx -v
+```
+
+### Install Git
+```bash
+sudo apt-get install -y git
+git --version
 ```
 
 ---
 
-## Step 13 ‚Äî Attach IAM Role to EC2
+## Step 7 ó Clone Your Repository on EC2
 
-This lets EC2 pull images from ECR without storing AWS keys on the server.
+```bash
+cd ~
+git clone https://github.com/<your-username>/agentsql.git agentsql
+cd agentsql
+```
 
-1. **AWS Console ‚Üí IAM ‚Üí Roles ‚Üí Create Role**
-2. Trusted entity: **EC2**
-3. Attach policy: `AmazonEC2ContainerRegistryReadOnly`
-4. Name: `ec2-ecr-read-role` ‚Üí Create
-5. **EC2 ‚Üí Your Instance ‚Üí Actions ‚Üí Security ‚Üí Modify IAM Role**
-6. Select `ec2-ecr-read-role` ‚Üí Update
+> If your repo is private, use a **GitHub Personal Access Token (PAT)**:
+> ```bash
+> git clone https://<your-token>@github.com/<your-username>/agentsql.git agentsql
+> ```
 
 ---
 
-## Step 14 ‚Äî Create Production `.env` on EC2
+## Step 8 ó Create Production .env on EC2
 
-On EC2:
 ```bash
-mkdir -p ~/agentsql && cd ~/agentsql
+cd ~/agentsql
 nano .env
 ```
 
-Paste your real values:
+Paste your production values:
 ```env
 PORT=3001
-JWT_SECRET=<run: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))">
+AGENT_URL=http://127.0.0.1:8000
+JWT_SECRET=<your-long-random-string>
 JWT_EXPIRES_IN=8h
-MONGO_URI=mongodb://mongo:27017/agentsql
-AGENT_URL=http://agent:8000
-GEMINI_API_KEY=<your_gemini_api_key>
-AWS_ACCOUNT_ID=<your_12_digit_id>
-AWS_REGION=ap-south-1
+MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/agentsql?retryWrites=true&w=majority
+ENCRYPTION_KEY=<your-64-char-hex-key>
+GEMINI_API_KEY=<your-gemini-api-key>
 ```
 
-Save: `Ctrl+O` ‚Üí `Enter` ‚Üí `Ctrl+X`
+Save: `Ctrl+O` ? `Enter` ? `Ctrl+X`
+
+> This `.env` is the initial one. After first deploy, GitHub Actions will overwrite it automatically from your GitHub Secrets.
 
 ---
 
-## Step 15 ‚Äî First Manual Deploy (Bootstrap)
+## Step 9 ó Install Dependencies
 
-Do this **once** to get images into ECR for the first time.
-
-On your **local machine** (PowerShell):
-```powershell
-$ACCOUNT_ID = "123456789012"   # ‚Üê replace with yours
-$REGION     = "ap-south-1"
-$ECR        = "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-
-# Login to ECR
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR
-
-# Build and push
-docker build -t $ECR/agentsql-client:latest ./client; docker push $ECR/agentsql-client:latest
-docker build -t $ECR/agentsql-server:latest ./server; docker push $ECR/agentsql-server:latest
-docker build -t $ECR/agentsql-agent:latest  ./agent;  docker push $ECR/agentsql-agent:latest
-```
-
-Copy `docker-compose.yml` to EC2:
-```powershell
-scp -i "your-key.pem" "docker-compose.yml" ubuntu@<EC2-IP>:~/agentsql/
-```
-
-Start containers on EC2:
 ```bash
-# On EC2
+# Server dependencies
+cd ~/agentsql/server
+npm ci --omit=dev
+
+# Agent dependencies
+cd ~/agentsql/agent
+pip install -r requirements.txt
+
+# Client dependencies + build
+cd ~/agentsql/client
+npm ci
+npm run build
+```
+
+---
+
+## Step 10 ó Configure Nginx
+
+Create the Nginx site config:
+```bash
+sudo nano /etc/nginx/sites-available/agentsql
+```
+
+Paste this config:
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /var/www/agentsql;
+    index index.html;
+
+    # Serve React app (SPA fallback)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy API calls to Node.js server
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+Save: `Ctrl+O` ? `Enter` ? `Ctrl+X`
+
+Enable the site and deploy client build:
+```bash
+# Create web root directory
+sudo mkdir -p /var/www/agentsql
+
+# Copy built React files
+sudo cp -r ~/agentsql/client/dist/* /var/www/agentsql/
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/agentsql /etc/nginx/sites-enabled/
+
+# Remove default site
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test config and reload
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+---
+
+## Step 11 ó Start Services with PM2
+
+```bash
 cd ~/agentsql
-docker compose --env-file .env up -d
 
-# Verify
-docker compose ps
+# Start all services using the ecosystem config
+pm2 start ecosystem.config.js
+
+# Check they are all running
+pm2 status
+
+# Save PM2 process list (survives reboots)
+pm2 save
+
+# Auto-start PM2 on system reboot
+pm2 startup
+# ? Copy and run the command it prints (starts with: sudo env PATH=...)
+```
+
+Expected output from `pm2 status`:
+```
++----------------------------------------------------+
+¶ name                ¶ id ¶ status  ¶ cpu  ¶ memory ¶
++---------------------+----+---------+------+--------¶
+¶ agentsql-server     ¶ 0  ¶ online  ¶ 0%   ¶ 60mb   ¶
+¶ agentsql-agent      ¶ 1  ¶ online  ¶ 0%   ¶ 80mb   ¶
++----------------------------------------------------+
 ```
 
 ---
 
-## Step 16 ‚Äî Verify the Deployment
+## Step 12 ó Verify Everything Works
 
 ```bash
-# Run from anywhere
-curl http://<EC2-IP>/                      # Frontend
-curl http://<EC2-IP>:3001/api/health       # API
-# Open in browser: http://<EC2-IP>:8000/docs   # Agent
+# Health check ó API
+curl http://localhost:3001/api/health
+# Expected: {"status":"ok","timestamp":"..."}
+
+# Agent health
+curl http://localhost:8000/docs
+# Expected: FastAPI Swagger UI HTML
+
+# Frontend (via Nginx)
+curl http://localhost/
+# Expected: HTML of your React app
 ```
 
-All returning responses = **deployment successful** ‚úÖ
+From your browser:
+- **Frontend**: `http://<EC2-PUBLIC-IP>/`
+- **API health**: `http://<EC2-PUBLIC-IP>/api/health`
+- **Agent docs**: `http://<EC2-PUBLIC-IP>:8000/docs`
+
+> ?? Port 8000 must be open in your EC2 security group to access agent docs from browser.
+
+---
+
+# PART 3 ó AUTOMATED DEPLOYS
+
+---
+
+## Step 13 ó Trigger Your First Automated Deploy
+
+After completing Parts 1 and 2, push any change:
+
+```powershell
+git add .
+git commit -m "deploy: production setup complete"
+git push origin main
+```
+
+Watch the pipeline at:
+`https://github.com/<your-username>/agentsql/actions`
+
+Each deploy will:
+1. SSH into EC2
+2. Pull latest code
+3. Install/update dependencies
+4. Build React app
+5. Reload PM2 (zero downtime)
+
+---
+
+## Step 14 ó Useful Commands on EC2
+
+```bash
+# Check service status
+pm2 status
+
+# View live logs
+pm2 logs agentsql-server
+pm2 logs agentsql-agent
+
+# Restart a specific service
+pm2 restart agentsql-server
+pm2 restart agentsql-agent
+
+# Reload all (zero-downtime)
+pm2 reload ecosystem.config.js
+
+# Stop all services
+pm2 stop all
+
+# Check Nginx status
+sudo systemctl status nginx
+sudo nginx -t               # test config
+sudo systemctl reload nginx # apply config changes
+```
 
 ---
 
@@ -349,38 +389,46 @@ All returning responses = **deployment successful** ‚úÖ
 
 | Problem | Fix |
 |---------|-----|
-| Container won't start | `docker compose logs <service-name>` |
-| ECR login fails on EC2 | Re-run: `aws ecr get-login-password --region ap-south-1 \| docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com` |
-| MongoDB not connecting | `docker compose ps mongo` then `docker compose logs mongo` |
-| GitHub Actions SSH fails | Verify `EC2_SSH_KEY` has full `.pem` content including header/footer |
-| Out of disk on EC2 | `docker system prune -a --volumes` |
+| Service not starting | `pm2 logs agentsql-server` or `pm2 logs agentsql-agent` |
+| MongoDB not connecting | Check `MONGO_URI` in `.env`, verify Atlas IP whitelist |
+| Frontend shows blank page | Check `/var/www/agentsql/` has files, check Nginx: `sudo nginx -t` |
+| GitHub Actions SSH fails | Verify `EC2_SSH_KEY` in GitHub Secrets has full `.pem` content |
+| Port 3001 not responding | `pm2 status` ó check server is `online`, check security group |
+| Python agent crashes | `pm2 logs agentsql-agent`, check `GEMINI_API_KEY` is set |
+| `pm2 reload` fails | Run `pm2 start ecosystem.config.js` first, then future deploys use `reload` |
 
 ---
 
-## ‚úÖ Full Checklist
-
-**Docker**
-- [ ] Docker Desktop installed and running
-- [ ] All 3 images build successfully locally
-- [ ] `docker compose up` works on local machine
+## ? Full Checklist
 
 **GitHub**
 - [ ] Code pushed to `main` branch
-- [ ] All 5 GitHub Secrets added
+- [ ] All 6 GitHub Secrets added (`EC2_HOST`, `EC2_SSH_KEY`, `MONGO_URI`, `JWT_SECRET`, `ENCRYPTION_KEY`, `GEMINI_API_KEY`)
 - [ ] `.github/workflows/deploy.yml` present in repo
+- [ ] `ecosystem.config.js` present in repo root
 
-**AWS**
-- [ ] AWS CLI configured locally
-- [ ] 3 ECR repositories created
-- [ ] EC2 instance running with correct security group rules
-- [ ] Docker installed on EC2
-- [ ] IAM role attached to EC2
-- [ ] Production `.env` created on EC2 (`~/agentsql/.env`)
-- [ ] First manual build + push done from local machine
-- [ ] `docker compose up -d` running on EC2
+**EC2 Server (one-time setup)**
+- [ ] EC2 instance running (Ubuntu 24.04, t3.medium)
+- [ ] Security group: ports 22, 80, 3001 open
+- [ ] Node.js 20 installed
+- [ ] Python 3.11 + pip installed
+- [ ] PM2 installed globally
+- [ ] Nginx installed and running
+- [ ] Repo cloned to `~/agentsql`
+- [ ] `.env` created with real production values
+- [ ] All dependencies installed
+- [ ] Nginx configured and pointing to `/var/www/agentsql`
+- [ ] React build copied to `/var/www/agentsql`
+- [ ] PM2 started with `ecosystem.config.js`
+- [ ] `pm2 save` and `pm2 startup` run
 - [ ] Frontend loads at `http://<EC2-IP>/`
-- [ ] GitHub Actions pipeline succeeds on next push ‚úì
+- [ ] API responds at `http://<EC2-IP>/api/health`
+
+**After first GitHub Actions deploy**
+- [ ] Push to main triggers the workflow successfully
+- [ ] `pm2 status` shows both services `online`
+- [ ] App works end-to-end ?
 
 ---
 
-*AgentSQL ‚Äî AI Database Analytics Platform*
+*AgentSQL ó AI Database Analytics Platform*

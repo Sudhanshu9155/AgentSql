@@ -1,38 +1,48 @@
 # AgentSQL
 
-A starter full-stack project with:
-- React frontend in client/
-- Express backend in server/
-- Python AI service in agent/
+An AI-powered database analytics platform with:
+- ?? React frontend (`client/`)
+- ?? Node.js/Express backend (`server/`)
+- ?? Python FastAPI AI agent (`agent/`)
+- ?? MongoDB Atlas (cloud database)
 
-## Run locally
+## Run Locally
 
-### Frontend
+### 1. Frontend
 ```bash
 cd client
 npm install
 npm run dev
 ```
+Runs at: `http://localhost:5173`
 
-### Backend
+### 2. Backend (Server)
 ```bash
 cd server
 npm install
 npm run dev
 ```
+Runs at: `http://localhost:3001`
 
-### Agent service
+### 3. Agent Service
 ```bash
 cd agent
 pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
+python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+Runs at: `http://localhost:8000`
 
-### Docker
-```bash
-docker compose up --build
-```
+## Environment Variables
 
+Copy `.env.example` to `.env` and fill in your values:
 
+| Variable | Description |
+|----------|-------------|
+| `MONGO_URI` | MongoDB Atlas connection string |
+| `JWT_SECRET` | Random secret for JWT signing |
+| `ENCRYPTION_KEY` | 64-char hex key for field encryption |
+| `GEMINI_API_KEY` | Google Gemini API key |
 
+## Deployment
 
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for full step-by-step instructions to deploy on **AWS EC2 + GitHub Actions**.
