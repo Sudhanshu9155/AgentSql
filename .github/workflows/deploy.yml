@@ -131,10 +131,13 @@ jobs:
             echo "      Configuring default AgentSQL database..."
             sudo mysql -u root <<-MYSQLEOF
             CREATE DATABASE IF NOT EXISTS agentsql;
+            CREATE DATABASE IF NOT EXISTS smart_city;
             CREATE USER IF NOT EXISTS 'agentsql'@'localhost' IDENTIFIED BY 'agentsql123';
             CREATE USER IF NOT EXISTS 'agentsql'@'127.0.0.1' IDENTIFIED BY 'agentsql123';
+            CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY 'password';
             GRANT ALL PRIVILEGES ON agentsql.* TO 'agentsql'@'localhost';
             GRANT ALL PRIVILEGES ON agentsql.* TO 'agentsql'@'127.0.0.1';
+            GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1';
             FLUSH PRIVILEGES;
             MYSQLEOF
             echo "      Default local database configured (agentsql/agentsql123)"
