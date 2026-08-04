@@ -43,7 +43,7 @@ jobs:
             if ! command -v python3 &>/dev/null; then
               echo "[2/8] Installing Python 3 + pip..."
               sudo apt-get update -y 2>/dev/null
-              sudo apt-get install -y python3 python3-pip python3-venv build-essential 2>/dev/null
+              sudo apt-get install -y python3 python3-pip python3-venv python3-dev build-essential 2>/dev/null
               echo "      Python $(python3 --version) installed"
             else
               echo "[2/8] Python already installed: $(python3 --version)"
@@ -52,8 +52,11 @@ jobs:
                 sudo apt-get install -y python3-pip 2>/dev/null
               fi
               if ! command -v gcc &>/dev/null; then
-                echo "      Installing build-essential (gcc needed for some packages)..."
-                sudo apt-get install -y build-essential 2>/dev/null
+                echo "      Installing build-essential + python3-dev..."
+                sudo apt-get install -y build-essential python3-dev 2>/dev/null
+              elif ! dpkg -s python3-dev &>/dev/null 2>&1; then
+                echo "      Installing python3-dev (needed by Cython for pandas)..."
+                sudo apt-get install -y python3-dev 2>/dev/null
               fi
             fi
 
