@@ -152,8 +152,8 @@ jobs:
             echo "      Installing agent dependencies (Python 3.12 venv)..."
             cd ~/agentsql/agent
             export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-            ~/agentsql-venv/bin/pip install --upgrade pip --quiet
-            ~/agentsql-venv/bin/pip install -r requirements.txt --prefer-binary --quiet
+            export VIRTUAL_ENV="$HOME/agentsql-venv"
+            uv pip install -r requirements.txt --quiet
             echo "      Agent dependencies installed successfully"
 
             echo "      Building React client..."
