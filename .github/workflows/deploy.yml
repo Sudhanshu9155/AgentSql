@@ -116,6 +116,29 @@ jobs:
             sudo systemctl reload nginx
             echo "      Nginx configured and reloaded"
 
+            # ── STEP 4.5: Install and configure MySQL ──────────────────────────
+            if ! command -v mysql &>/dev/null; then
+              echo "[4.5/8] Installing MySQL Server..."
+              export DEBIAN_FRONTEND=noninteractive
+              sudo apt-get install -y mysql-server
+              sudo systemctl enable mysql
+              sudo systemctl start mysql
+              echo "      MySQL installed"
+            else
+              echo "[4.5/8] MySQL already installed"
+            fi
+
+            echo "      Configuring default AgentSQL database..."
+            sudo mysql -u root <<-MYSQLEOF
+            CREATE DATABASE IF NOT EXISTS agentsql;
+            CREATE USER IF NOT EXISTS 'agentsql'@'localhost' IDENTIFIED BY 'agentsql123';
+            CREATE USER IF NOT EXISTS 'agentsql'@'127.0.0.1' IDENTIFIED BY 'agentsql123';
+            GRANT ALL PRIVILEGES ON agentsql.* TO 'agentsql'@'localhost';
+            GRANT ALL PRIVILEGES ON agentsql.* TO 'agentsql'@'127.0.0.1';
+            FLUSH PRIVILEGES;
+            MYSQLEOF
+            echo "      Default local database configured (agentsql/agentsql123)"
+
             # ── STEP 5: Clone or pull latest code ─────────────────────────────
             if [ ! -d "$HOME/agentsql/.git" ]; then
               echo "[5/8] Cloning repository..."
