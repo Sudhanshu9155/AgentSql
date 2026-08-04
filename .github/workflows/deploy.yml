@@ -60,7 +60,7 @@ jobs:
 
             # Create isolated venv with Python 3.12
             echo "      Creating Python 3.12 venv..."
-            uv venv --python 3.12 ~/agentsql-venv
+            uv venv --allow-existing --python 3.12 ~/agentsql-venv
             echo "      Venv ready: ~/agentsql-venv ($(~/agentsql-venv/bin/python --version))"
 
             # ── STEP 3: Install PM2 ────────────────────────────────────────────
